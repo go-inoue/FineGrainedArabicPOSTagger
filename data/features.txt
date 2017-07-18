@@ -1,0 +1,14 @@
+num	num:d num:na num:p num:s num:u
+prc0	prc0:mA_neg prc0:0 prc0:mA_part prc0:na prc0:lA_neg prc0:Al_det prc0:mA_rel
+pos	pos:pron pos:part_verb pos:part_neg pos:verb pos:conj_sub pos:part_restrict pos:conj pos:pron_interrog pos:part_voc pos:part_fut pos:digit pos:noun_quant pos:interj pos:latin pos:adv_rel pos:pron_exclam pos:noun_prop pos:verb_pseudo pos:part_interrog pos:adj pos:adv_interrog pos:part_det pos:noun_num pos:part pos:punc pos:adj_num pos:prep pos:pron_rel pos:pron_dem pos:adj_comp pos:part_focus pos:abbrev pos:adv pos:noun
+prc3	prc3:>a_ques prc3:na prc3:0
+asp	asp:i asp:c asp:na asp:p asp:*
+stt	stt:na stt:u stt:i stt:c stt:d
+vox	vox:u vox:p vox:na vox:a
+prc1	prc1:li_prep prc1:la_emph prc1:0 prc1:yA_voc prc1:wa_prep prc1:hA_dem prc1:la_rc prc1:sa_fut prc1:bi_prep prc1:bi_part prc1:la_prep prc1:na prc1:wA_voc prc1:ka_prep prc1:fiy_prep prc1:li_jus prc1:ta_prep
+cas	cas:na cas:a cas:n cas:u cas:g
+per	per:2 per:3 per:1 per:na
+gen	gen:m gen:f gen:na
+enc0	enc0:1s_pron enc0:2fp_pron enc0:2ms_dobj enc0:man_interrog enc0:3ms_dobj enc0:2mp_pron enc0:3fs_poss enc0:3fp_dobj enc0:3mp_pron enc0:3d_poss enc0:2mp_dobj enc0:2d_pron enc0:2fp_dobj enc0:3mp_dobj enc0:2fs_dobj enc0:2fp_poss enc0:1p_poss enc0:ma_interrog enc0:3fp_pron enc0:2mp_poss enc0:2fs_pron enc0:mA_rel enc0:ma_sub enc0:1s_poss enc0:3ms_poss enc0:mA_interrog enc0:2d_poss enc0:na enc0:ma_rel enc0:3fs_pron enc0:Ah_voc enc0:1p_dobj enc0:1p_pron enc0:3fs_dobj enc0:mA_sub enc0:3mp_poss enc0:3d_pron enc0:2ms_poss enc0:2fs_poss enc0:man_rel enc0:2ms_pron enc0:3d_dobj enc0:3ms_pron enc0:1s_dobj enc0:2d_dobj enc0:0 enc0:lA_neg enc0:3fp_poss
+prc2	prc2:fa_conj prc2:0 prc2:fa_conn prc2:wa_part prc2:fa_rc prc2:fa_sub prc2:wa_conj prc2:wa_sub prc2:na
+mod	mod:na mod:u mod:i mod:j mod:s
