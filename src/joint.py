@@ -3,6 +3,9 @@
 """
 Joint Prediction of Morphological Features for Fine-grained Arabic
 Part-of-Speech Tagging
+
+UD Data
+
 """
 
 __author__ = "Go Inoue"
@@ -21,7 +24,11 @@ import dynet as dy
 import numpy as np
 
 NUM = re.compile("[0-9]")
-feat_list = ["POS", "PRC3", "PRC2", "PRC1", "PRC0", "PER", "ASP", "VOX", "MOD",
+feat_list = ["POS", "Abbr", "AdpType", "Aspect", "Case", "Definite",
+             "Foreign", "Gender", "Mood", "Negative", "NumForm",
+             "NumValue", "Number", "Person", "PronType",
+             "VerbForm", "Voice"]
+dict_feat_list = ["POS", "PRC3", "PRC2", "PRC1", "PRC0", "PER", "ASP", "VOX", "MOD",
              "GEN", "NUM", "STT", "CAS", "ENC0"]
 
 class Vocab:
@@ -37,17 +44,27 @@ class Vocab:
             [w2i[word] for word in sent]
         return Vocab(w2i)
     @classmethod
-    def morphs(self):
+    def morphs(self, tags):
         w2i = defaultdict(lambda: len(w2i))
         vts = dict()
+        for tag in feat_list:
+            corpus = []
+            for t in tags:
+                corpus.append(t[tag])
+            vts[tag] = self.from_corpus([corpus])
+        return vts
+    @classmethod
+    def d_feats(self):
+        w2i = defaultdict(lambda: len(w2i))
+        df = dict()
         with open("./data/features.txt") as f:
             features_dict = defaultdict(set)
             lines = [line.strip().split("\t") for line in f.readlines()]
             for line in lines:
                 features_dict[line[0].upper()] = set(line[1].split())
-        for feat in feat_list:
-            vts[feat] = self.from_corpus([list(features_dict[feat])])
-        return vts
+        for feat in dict_feat_list:
+            df[feat] = self.from_corpus([list(features_dict[feat])])
+        return df
     def size(self):
         return len(self.w2i.keys())
     def vocabs(self):
@@ -64,7 +81,7 @@ def read(fname):
                 word = cols[1]
                 word = NUM.sub("0", word)
                 feats = dict()
-                for name, feat in zip(feat_list, cols[2:-1]):
+                for name, feat in zip(feat_list, cols[2:]):
                     feats[name] = feat
                 # Make tuple of word and tags, then append to the list "wt_list"
                 wt_list.append((word, feats))
@@ -75,16 +92,23 @@ def read(fname):
             corpus.append(wt_list)
     return corpus
 
+def get_progressbar_str(progress):
+    MAX_LEN = 50
+    BAR_LEN = int(MAX_LEN * progress)
+    return ('[' + '=' * BAR_LEN + ('>' if BAR_LEN < MAX_LEN else '') +\
+            ' ' * (MAX_LEN - BAR_LEN) + '] %.1f%%' % (progress * 100.))
+
 class Tagger(dy.Saveable):
     def __init__(self, n_words, n_chars, n_w_emb, n_c_emb, n_d_emb, n_hidden,
-                 n_layer, n_mlp, vw, vc, vts, feat_dict, optimizer, feature):
+                 n_layer, n_mlp, vw, vc, vts, dict_feats, feat_dict, optimizer,
+                 feature):
         self.model = dy.Model()
         self.optimizer = optimizer
         self.WORDS_LOOKUP = self.model.add_lookup_parameters((n_words, n_w_emb))
         self.CHARS_LOOKUP = self.model.add_lookup_parameters((n_chars, n_c_emb))
         if args.use_dict:
             self.FEAT_LOOKUPs = {k: self.model.add_lookup_parameters(\
-                                 (vts[k].size(), n_d_emb)) for k,v in vts.items()}
+                                 (dict_feats[k].size(), n_d_emb)) for k,v in dict_feats.items()}
             if args.dict_all:
                 self.fwdRNN = dy.VanillaLSTMBuilder(n_layer, n_w_emb+n_w_emb/2+\
                                                     n_d_emb*14,n_hidden, self.model)
@@ -109,6 +133,7 @@ class Tagger(dy.Saveable):
         self.vw = vw
         self.vc = vc
         self.vts = vts
+        self.dict_feats = dict_feats
         self.feat_dict = feat_dict
         self.feature = feature
         self.best_parameters = None
@@ -169,24 +194,24 @@ class Tagger(dy.Saveable):
             if w in self.feat_dict:
                 cand_emb_list = []#
                 if args.dict_all:
-                    for k,v in sorted(self.vts.items()):
-                        candidates = [self.vts[k].w2i[c] for c in self.feat_dict[w][k]]
+                    for k,v in sorted(self.dict_feats.items()):
+                        candidates = [self.dict_feats[k].w2i[c] for c in self.feat_dict[w][k]]
                         cand_embs = [self.FEAT_LOOKUPs[k][cid] for cid in candidates]
                         cand_emb_list.append(dy.esum(cand_embs))
                 else:
-                    candidates = [self.vts[self.feature].w2i[c] for c in self.feat_dict[w][self.feature]]
+                    candidates = [self.dict_feats[self.feature].w2i[c] for c in self.feat_dict[w][self.feature]]
                     cand_embs = [self.FEAT_LOOKUPs[self.feature][cid] for cid in candidates]
                     cand_emb_list.append(dy.esum(cand_embs))
                 cand_emb = dy.concatenate(cand_emb_list)
             else:
                 cand_emb_list = []
                 if args.dict_all:
-                    for k,v in sorted(self.vts.items()):
-                        candidates = [self.vts[k].w2i[c] for c in self.vts[k].vocabs()]
+                    for k,v in sorted(self.dict_feats.items()):
+                        candidates = [self.dict_feats[k].w2i[c] for c in self.dict_feats[k].vocabs()]
                         cand_embs = [self.FEAT_LOOKUPs[k][cid] for cid in candidates]
                         cand_emb_list.append(dy.esum(cand_embs))
                 else:
-                    candidates = [self.vts[self.feature].w2i[c] for c in self.vts[self.feature].vocabs()]
+                    candidates = [self.dict_feats[self.feature].w2i[c] for c in self.dict_feats[self.feature].vocabs()]
                     cand_embs = [self.FEAT_LOOKUPs[self.feature][cid] for cid in candidates]
                     cand_emb_list.append(dy.esum(cand_embs))
                 cand_emb = dy.concatenate(cand_emb_list)
@@ -256,6 +281,13 @@ class Tagger(dy.Saveable):
                 loss_exp.backward()
                 trainer.update()
 
+                if args.progress:
+                    time.sleep(0.01)
+                    progress = 1.0 * i / (n_samples_train-1)
+                    i += 1
+                    sys.stderr.write("\rTraining:\t\033[K"\
+                                     + get_progressbar_str(progress))
+                    sys.stderr.flush()
             sys.stderr.write("\n")
 
             L.info(" Number of epoch: {}\n".format(ITER+1))
@@ -292,7 +324,13 @@ class Tagger(dy.Saveable):
                 if go == gu:
                     acc_all["All"] +=1
             n_samples+= len(golds)
-
+            if args.progress:
+                time.sleep(0.01)
+                progress = 1.0 * i / (n_samples_corpus-1)
+                i += 1
+                sys.stderr.write("\rPredicting:\t\033[K"\
+                                 + get_progressbar_str(progress))
+                sys.stderr.flush()
         sys.stderr.write("\n")
         print("Accuracy: {:.2f}% ({}/{})".format(\
               100*acc_all["All"]/n_samples, acc_all["All"], n_samples))
@@ -326,29 +364,33 @@ class Tagger(dy.Saveable):
                           self.FEAT_LOOKUPs["MOD"], self.FEAT_LOOKUPs["GEN"],
                           self.FEAT_LOOKUPs["NUM"], self.FEAT_LOOKUPs["STT"],
                           self.FEAT_LOOKUPs["CAS"], self.FEAT_LOOKUPs["ENC0"],
-                          self.pHs["POS"], self.pHs["PRC3"], self.pHs["PRC2"],
-                          self.pHs["PRC1"], self.pHs["PRC0"], self.pHs["PER"],
-                          self.pHs["ASP"], self.pHs["VOX"], self.pHs["MOD"],
-                          self.pHs["GEN"], self.pHs["NUM"], self.pHs["STT"],
-                          self.pHs["CAS"], self.pHs["ENC0"],
-                          self.pOs["POS"], self.pOs["PRC3"], self.pOs["PRC2"],
-                          self.pOs["PRC1"], self.pOs["PRC0"], self.pOs["PER"],
-                          self.pOs["ASP"], self.pOs["VOX"], self.pOs["MOD"],
-                          self.pOs["GEN"], self.pOs["NUM"], self.pOs["STT"],
-                          self.pOs["CAS"], self.pOs["ENC0"],
+                          self.pHs["POS"], self.pHs["Abbr"], self.pHs["AdpType"],
+                          self.pHs["Aspect"], self.pHs["Case"], self.pHs["Definite"],
+                          self.pHs["Foreign"], self.pHs["Gender"], self.pHs["Mood"],
+                          self.pHs["Negative"], self.pHs["NumForm"], self.pHs["NumValue"],
+                          self.pHs["Number"], self.pHs["Person"],self.pHs["PronType"],
+                          self.pHs["VerbForm"], self.pHs["Voice"],
+                          self.pOs["POS"], self.pOs["Abbr"], self.pOs["AdpType"],
+                          self.pOs["Aspect"], self.pOs["Case"], self.pOs["Definite"],
+                          self.pOs["Foreign"], self.pOs["Gender"], self.pOs["Mood"],
+                          self.pOs["Negative"], self.pOs["NumForm"], self.pOs["NumValue"],
+                          self.pOs["Number"], self.pOs["Person"],self.pOs["PronType"],
+                          self.pOs["VerbForm"], self.pOs["Voice"],
                           self.fwdRNN, self.bwdRNN, self.cFwdRNN, self.cBwdRNN)
         else:
             components = (self.WORDS_LOOKUP, self.CHARS_LOOKUP,
-                          self.pHs["POS"], self.pHs["PRC3"], self.pHs["PRC2"],
-                          self.pHs["PRC1"], self.pHs["PRC0"], self.pHs["PER"],
-                          self.pHs["ASP"], self.pHs["VOX"], self.pHs["MOD"],
-                          self.pHs["GEN"], self.pHs["NUM"], self.pHs["STT"],
-                          self.pHs["CAS"], self.pHs["ENC0"],
-                          self.pOs["POS"], self.pOs["PRC3"], self.pOs["PRC2"],
-                          self.pOs["PRC1"], self.pOs["PRC0"], self.pOs["PER"],
-                          self.pOs["ASP"], self.pOs["VOX"], self.pOs["MOD"],
-                          self.pOs["GEN"], self.pOs["NUM"], self.pOs["STT"],
-                          self.pOs["CAS"], self.pOs["ENC0"],
+                          self.pHs["POS"], self.pHs["Abbr"], self.pHs["AdpType"],
+                          self.pHs["Aspect"], self.pHs["Case"], self.pHs["Definite"],
+                          self.pHs["Foreign"], self.pHs["Gender"], self.pHs["Mood"],
+                          self.pHs["Negative"], self.pHs["NumForm"], self.pHs["NumValue"],
+                          self.pHs["Number"], self.pHs["Person"],self.pHs["PronType"],
+                          self.pHs["VerbForm"], self.pHs["Voice"],
+                          self.pOs["POS"], self.pOs["Abbr"], self.pOs["AdpType"],
+                          self.pOs["Aspect"], self.pOs["Case"], self.pOs["Definite"],
+                          self.pOs["Foreign"], self.pOs["Gender"], self.pOs["Mood"],
+                          self.pOs["Negative"], self.pOs["NumForm"], self.pOs["NumValue"],
+                          self.pOs["Number"], self.pOs["Person"],self.pOs["PronType"],
+                          self.pOs["VerbForm"], self.pOs["Voice"],
                           self.fwdRNN, self.bwdRNN, self.cFwdRNN, self.cBwdRNN)
         return components
 
@@ -362,29 +404,33 @@ class Tagger(dy.Saveable):
             self.FEAT_LOOKUPs["MOD"], self.FEAT_LOOKUPs["GEN"],\
             self.FEAT_LOOKUPs["NUM"], self.FEAT_LOOKUPs["STT"],\
             self.FEAT_LOOKUPs["CAS"], self.FEAT_LOOKUPs["ENC0"],\
-            self.pHs["POS"], self.pHs["PRC3"], self.pHs["PRC2"],\
-            self.pHs["PRC1"], self.pHs["PRC0"], self.pHs["PER"],\
-            self.pHs["ASP"], self.pHs["VOX"], self.pHs["MOD"],\
-            self.pHs["GEN"], self.pHs["NUM"], self.pHs["STT"],\
-            self.pHs["CAS"], self.pHs["ENC0"],\
-            self.pOs["POS"], self.pOs["PRC3"], self.pOs["PRC2"],\
-            self.pOs["PRC1"], self.pOs["PRC0"], self.pOs["PER"],\
-            self.pOs["ASP"], self.pOs["VOX"], self.pOs["MOD"],\
-            self.pOs["GEN"], self.pOs["NUM"], self.pOs["STT"],\
-            self.pOs["CAS"], self.pOs["ENC0"],\
+            self.pHs["POS"], self.pHs["Abbr"], self.pHs["AdpType"],\
+            self.pHs["Aspect"], self.pHs["Case"], self.pHs["Definite"],\
+            self.pHs["Foreign"], self.pHs["Gender"], self.pHs["Mood"],\
+            self.pHs["Negative"], self.pHs["NumForm"], self.pHs["NumValue"],\
+            self.pHs["Number"], self.pHs["Person"],self.pHs["PronType"],\
+            self.pHs["VerbForm"], self.pHs["Voice"],\
+            self.pOs["POS"], self.pOs["Abbr"], self.pOs["AdpType"],\
+            self.pOs["Aspect"], self.pOs["Case"], self.pOs["Definite"],\
+            self.pOs["Foreign"], self.pOs["Gender"], self.pOs["Mood"],\
+            self.pOs["Negative"], self.pOs["NumForm"], self.pOs["NumValue"],\
+            self.pOs["Number"], self.pOs["Person"],self.pOs["PronType"],\
+            self.pOs["VerbForm"], self.pOs["Voice"],\
             self.fwdRNN, self.bwdRNN, self.cFwdRNN, self.cBwdRNN = components
         else:
             self.WORDS_LOOKUP, self.CHARS_LOOKUP,\
-            self.pHs["POS"], self.pHs["PRC3"], self.pHs["PRC2"],\
-            self.pHs["PRC1"], self.pHs["PRC0"], self.pHs["PER"],\
-            self.pHs["ASP"], self.pHs["VOX"], self.pHs["MOD"],\
-            self.pHs["GEN"], self.pHs["NUM"], self.pHs["STT"],\
-            self.pHs["CAS"], self.pHs["ENC0"],\
-            self.pOs["POS"], self.pOs["PRC3"], self.pOs["PRC2"],\
-            self.pOs["PRC1"], self.pOs["PRC0"], self.pOs["PER"],\
-            self.pOs["ASP"], self.pOs["VOX"], self.pOs["MOD"],\
-            self.pOs["GEN"], self.pOs["NUM"], self.pOs["STT"],\
-            self.pOs["CAS"], self.pOs["ENC0"],\
+            self.pHs["POS"], self.pHs["Abbr"], self.pHs["AdpType"],\
+            self.pHs["Aspect"], self.pHs["Case"], self.pHs["Definite"],\
+            self.pHs["Foreign"], self.pHs["Gender"], self.pHs["Mood"],\
+            self.pHs["Negative"], self.pHs["NumForm"], self.pHs["NumValue"],\
+            self.pHs["Number"], self.pHs["Person"],self.pHs["PronType"],\
+            self.pHs["VerbForm"], self.pHs["Voice"],\
+            self.pOs["POS"], self.pOs["Abbr"], self.pOs["AdpType"],\
+            self.pOs["Aspect"], self.pOs["Case"], self.pOs["Definite"],\
+            self.pOs["Foreign"], self.pOs["Gender"], self.pOs["Mood"],\
+            self.pOs["Negative"], self.pOs["NumForm"], self.pOs["NumValue"],\
+            self.pOs["Number"], self.pOs["Person"],self.pOs["PronType"],\
+            self.pOs["VerbForm"], self.pOs["Voice"],\
             self.fwdRNN, self.bwdRNN, self.cFwdRNN, self.cBwdRNN = components
 
     def save_conll(self, corpus, path):
@@ -416,11 +462,11 @@ def train_mode():
         os.mkdir("log")
     if args.use_dict:
         if args.dict_all:
-            log_dir = os.path.join("log", "joint_dict_ALL"+args.optimizer+now)
+            log_dir = os.path.join("log", "UD_joint_dict_ALL"+args.optimizer+now)
         else:
-            log_dir = os.path.join("log", "joint_dict_"+args.feature+"_"+args.optimizer+now)
+            log_dir = os.path.join("log", "UD_joint_dict_ONE_"+args.feature+"_"+args.optimizer+now)
     else:
-        log_dir = os.path.join("log", "joint_no_dict_"+args.optimizer+now)
+        log_dir = os.path.join("log", "UD_joint_no_dict_"+args.optimizer+now)
     os.mkdir(log_dir)
 
     log_file = os.path.join(log_dir, "experimental_settings.log")
@@ -454,7 +500,7 @@ def train_mode():
     random.seed(args.dynet_seed)
 
     train = read(args.train)[:args.limit]
-    dev = read(args.dev)
+    dev = read(args.dev)[:args.limit]
     L.info(" Train Sentences:\t{}".format(len(train)))
     L.info(" Validation Sentences:\t{}".format(len(dev)))
 
@@ -472,13 +518,14 @@ def train_mode():
     chars.add("<*>")
     chars.add("_UNK_")
 
-    vts = Vocab.morphs()
+    dict_feats = Vocab.d_feats()
+    vts = Vocab.morphs(tags)
     vw = Vocab.from_corpus([words])
     vc = Vocab.from_corpus([chars])
 
     # save voabs
     vocabs = {}
-    vocabs["word"], vocabs["tags"], vocabs["chars"] = vw, vts, vc
+    vocabs["word"], vocabs["tags"], vocabs["chars"], vocabs["dict"] = vw, vts, vc, dict_feats
 
     with open(os.path.join(log_dir,"vocabs.pickle"), "wb") as f:
         pickle.dump(vocabs, f)
@@ -499,19 +546,16 @@ def train_mode():
                     n_w_emb=args.WEMBED_SIZE, n_c_emb=args.CEMBED_SIZE,
                     n_d_emb=args.DEMBED_SIZE, n_hidden=args.HIDDEN_SIZE,
                     n_mlp=args.MLP_SIZE, n_layer=args.N_LAYER, vw=vw, vc=vc,
-                    vts=vts, feat_dict=feat_dict, optimizer=args.optimizer,
-                    feature=args.feature)
+                    vts=vts, dict_feats=dict_feats, feat_dict=feat_dict,
+                    optimizer=args.optimizer, feature=args.feature)
     tagger.train(train=train, dev=dev, n_epoch=args.epoch, path=log_dir)
 
 def test_mode():
     model_path = os.path.join(args.model_dir, "dev_best.model")
-    if args.use_dict:
-        if args.dict_all:
-            log_file = "./experiment/results_joint_dict_ALL.txt"
-        else:
-            log_file = "./experiment/results_joint_dict_ONE_"+args.feature+".txt"
+    if args.dict_all:
+        log_file = "./experiment/results_joint_dict_ALL.txt"
     else:
-        log_file = "./experiment/results_joint_no_dict.txt"
+        log_file = "./experiment/results_joint_dict_ONE_"+args.feature+".txt"
     L.basicConfig(filename=log_file, level=L.INFO)
     test=read(args.test)
     now = time.strftime(" Date:\t%Y %m%d %H:%M:%S", time.strptime(time.ctime()))
@@ -524,7 +568,7 @@ def test_mode():
         vocabs = pickle.load(f)
     with open(args.tag_dict, "rb") as f:
         feat_dict = pickle.load(f)
-    vw, vc, vts = vocabs["word"], vocabs["chars"], vocabs["tags"]
+    vw, vc, vts, dict_feats = vocabs["word"], vocabs["chars"], vocabs["tags"], vocabs["dict"]
     n_words, n_chars = vw.size(), vc.size()
     for k,v in sorted(vts.items()):
         L.info(" Vocabulary Size of {}:\t{}".format(k, v.size()))
@@ -533,8 +577,8 @@ def test_mode():
                     n_w_emb=args.WEMBED_SIZE, n_c_emb=args.CEMBED_SIZE,
                     n_d_emb=args.DEMBED_SIZE, n_hidden=args.HIDDEN_SIZE,
                     n_mlp=args.MLP_SIZE, n_layer=args.N_LAYER, vw=vw, vc=vc,
-                    vts=vts, feat_dict=feat_dict, optimizer=args.optimizer,
-                    feature=args.feature)
+                    vts=vts, dict_feats=dict_feats, feat_dict=feat_dict,
+                    optimizer=args.optimizer, feature=args.feature)
     tagger.restore_components(tagger.model.load(model_path))
     tagger.accuracy(test)
     if args.save_conll:
@@ -565,7 +609,8 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", default=10, type=int)
     parser.add_argument("--loss", default="average", type=str)
     parser.add_argument("--limit", default=None, type=int)
-    parser.add_argument("--tag_dict", default="./data/feat_dict.pickle", type=str)
+    parser.add_argument("--tag_dict", default="./data/ud_feat_dict.pickle", type=str)
+    parser.add_argument("--progress",  action='store_true')
     parser.add_argument("--dropout",  action='store_true')
     parser.add_argument("--rate", default=0.2, type=float)
     parser.add_argument("CEMBED_SIZE", type=int, help="char embedding size")
